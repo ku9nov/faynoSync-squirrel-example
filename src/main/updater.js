@@ -1,6 +1,38 @@
 const { app, BrowserWindow, dialog, ipcMain, shell, autoUpdater } = require('electron');
+const fetch = require('node-fetch');
 const { Client, systemPlatform, systemArch } = require('@faynosync/sdk-js');
 const { version, app_name, channel, owner, baseURL, edgeURL, autoDownload } = require('./config.js');
+
+function logFlow(stage, data) {
+  if (data === undefined) console.log(`[update-flow] ${stage}`);
+  else console.log(`[update-flow] ${stage}:`, data);
+}
+
+// Squirrel.Windows takes the feed base URL, appends /RELEASES, then downloads the
+// .nupkg referenced inside it. The 401 surfaces here, deep in native code, so we
+// fetch RELEASES ourselves first and log exactly which package URLs Squirrel will
+// hit — that's where an unexpected 401/403 actually comes from.
+async function logWindowsReleases(feedURL) {
+  const base = feedURL.replace(/\/+$/, '');
+  const releasesURL = `${base}/RELEASES`;
+  logFlow('Squirrel.Windows RELEASES URL', releasesURL);
+  try {
+    const res = await fetch(releasesURL, { headers: { 'User-Agent': 'faynosync-squirrel-example' } });
+    logFlow('RELEASES response status', `${res.status} ${res.statusText}`);
+    const body = await res.text();
+    logFlow('RELEASES body', `\n${body}`);
+    for (const line of body.split(/\r?\n/)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 2 && parts[1]) {
+        const pkg = parts[1];
+        const pkgURL = /^https?:\/\//i.test(pkg) ? pkg : `${base}/${pkg}`;
+        logFlow('nupkg URL Squirrel will download', pkgURL);
+      }
+    }
+  } catch (err) {
+    console.error('[update-flow] Failed to fetch RELEASES for logging:', err);
+  }
+}
 
 let client;
 function getClient() {
@@ -13,6 +45,7 @@ function getClient() {
 let lastResult = null;
 let wired = false;
 let currentMeta = null;
+let currentFeedURL = null;
 
 function send(channel, payload) {
   const win = BrowserWindow.getAllWindows()[0];
@@ -61,6 +94,7 @@ function wire() {
 
   autoUpdater.on('error', (err) => {
     console.error('autoUpdater error:', err);
+    logFlow('autoUpdater error context', { feedURL: currentFeedURL, source: currentMeta && currentMeta.source });
     send('update:error', { message: String((err && err.message) || err) });
   });
 
@@ -89,19 +123,25 @@ async function startNativeUpdate(resp) {
     source: resp.source || '',
     fromVersion: version,
   };
+  const feedOpts = nativeFeedOptions();
+  logFlow('native feed options', feedOpts);
   let feed;
   try {
-    feed = await getClient().resolveNativeFeed(nativeFeedOptions());
+    feed = await getClient().resolveNativeFeed(feedOpts);
   } catch (err) {
     console.error('Failed to resolve native feed:', err);
     return false;
   }
+  logFlow('resolved native feed', feed);
   if (!feed.updateAvailable) {
     console.log('Native feed reports no update available.');
     return false;
   }
   console.log(`Native feed resolved from ${feed.source}: ${feed.feedURL}`);
+  if (platform === 'win32') await logWindowsReleases(feed.feedURL);
   wire();
+  currentFeedURL = feed.feedURL;
+  logFlow('setFeedURL', feed.feedURL);
   try {
     autoUpdater.setFeedURL({ url: feed.feedURL });
   } catch (err) {
@@ -139,6 +179,13 @@ async function checkForUpdates(deviceId) {
       deviceId,
     });
     console.log(resp);
+    logFlow('checkForUpdates result', {
+      source: resp.source,
+      updateAvailable: resp.updateAvailable,
+      critical: resp.critical,
+      updateUrl: resp.updateUrl,
+      packageUrls: resp.packageUrls,
+    });
     lastResult = resp;
 
     if (resp.updateAvailable) {
