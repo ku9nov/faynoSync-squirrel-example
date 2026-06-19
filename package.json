@@ -1,0 +1,36 @@
+{
+  "name": "faynosync-squirrel-example",
+  "version": "0.0.1",
+  "description": "Hello world app for testing faynoSync with the native Squirrel protocol",
+  "main": "src/main/main.js",
+  "author": "Serhii Kuianov <sergeyku9nov@gmail.com>",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --config electron-builder.config.js --publish never",
+    "dist:mac": "electron-builder --mac --config electron-builder.config.js --publish never",
+    "dist:win": "electron-builder --win --config electron-builder.config.js --publish never",
+    "dist:linux": "electron-builder --linux --config electron-builder.config.js --publish never",
+    "verify:mac-sign": "node scripts/verify-mac-sign.cjs",
+    "test": "jest",
+    "test:ci": "jest --ci --coverage"
+  },
+  "keywords": [],
+  "license": "ISC",
+  "dependencies": {
+    "@faynosync/sdk-js": "^0.3.0",
+    "dotenv": "^16.5.0",
+    "marked": "^15.0.11",
+    "node-fetch": "^2.6.1"
+  },
+  "devDependencies": {
+    "@electron/notarize": "^2.3.2",
+    "@types/jest": "^29.5.12",
+    "electron": ">=23.3.13",
+    "electron-builder": "^24.13.3",
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "npm": ">=8.19.3",
+    "node": ">=18.13.0"
+  }
+}
